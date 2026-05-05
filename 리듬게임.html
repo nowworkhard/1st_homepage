@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Web Rhythm Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'sans-serif';
+        }
+        canvas {
+            border: 4px solid #333;
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+        .controls {
+            margin-top: 20px;
+            text-align: center;
+        }
+        .key-hint {
+            display: inline-block;
+            width: 50px;
+            height: 50px;
+            line-height: 50px;
+            border: 2px solid #555;
+            border-radius: 8px;
+            margin: 0 5px;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="mb-4 text-center">
+        <h1 class="text-3xl font-bold mb-2">JS RHYTHM BEAT</h1>
+        <div id="scoreDisplay" class="text-xl text-yellow-400">Score: 0</div>
+        <div id="comboDisplay" class="text-2xl font-bold text-blue-400">Combo: 0</div>
+        <div id="judgmentDisplay" class="h-8 text-xl font-bold mt-2">READY</div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div class="controls">
+        <div class="key-hint" id="key-D">D</div>
+        <div class="key-hint" id="key-F">F</div>
+        <div class="key-hint" id="key-J">J</div>
+        <div class="key-hint" id="key-K">K</div>
+        <p class="mt-4 text-gray-400">Press the keys when the notes reach the line!</p>
+        <button id="startBtn" class="mt-2 px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-full font-bold transition">START GAME</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('scoreDisplay');
+        const comboDisplay = document.getElementById('comboDisplay');
+        const judgmentDisplay = document.getElementById('judgmentDisplay');
+        const startBtn = document.getElementById('startBtn');
+
+        // Game Settings
+        const LANE_COUNT = 4;
+        const LANE_WIDTH = 80;
+        const CANVAS_WIDTH = LANE_WIDTH * LANE_COUNT;
+        const CANVAS_HEIGHT = 600;
+        const JUDGMENT_LINE_Y = 520;
+        const NOTE_HEIGHT = 20;
+        const NOTE_SPEED = 5; // Pixels per frame
+        
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
+
+        let score = 0;
+        let combo = 0;
+        let gameActive = false;
+        let notes = [];
+        let animationId;
+        let frameCount = 0;
+
+        const keys = {
+            'd': { pressed: false, lane: 0, color: '#FF5E5E' },
+            'f': { pressed: false, lane: 1, color: '#5EACFF' },
+            'j': { pressed: false, lane: 2, color: '#5EACFF' },
+            'k': { pressed: false, lane: 3, color: '#FF5E5E' }
+        };
+
+        class Note {
+            constructor(lane) {
+                this.lane = lane;
+                this.y = -NOTE_HEIGHT;
+                this.active = true;
+            }
+
+            draw() {
+                if (!this.active) return;
+                ctx.fillStyle = Object.values(keys).find(k => k.lane === this.lane).color;
+                ctx.fillRect(this.lane * LANE_WIDTH + 5, this.y, LANE_WIDTH - 10, NOTE_HEIGHT);
+                
+                // Note glow effect
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = ctx.fillStyle;
+            }
+
+            update() {
+                this.y += NOTE_SPEED;
+                if (this.y > CANVAS_HEIGHT) {
+                    if (this.active) {
+                        showJudgment('MISS', '#ff4d4d');
+                        combo = 0;
+                        updateUI();
+                    }
+                    this.active = false;
+                }
+            }
+        }
+
+        function showJudgment(text, color) {
+            judgmentDisplay.innerText = text;
+            judgmentDisplay.style.color = color;
+            // Simple animation reset
+            judgmentDisplay.style.transform = 'scale(1.2)';
+            setTimeout(() => judgmentDisplay.style.transform = 'scale(1)', 100);
+        }
+
+        function updateUI() {
+            scoreDisplay.innerText = `Score: ${score}`;
+            comboDisplay.innerText = `Combo: ${combo}`;
+        }
+
+        function spawnNote() {
+            // Randomly spawn notes for this demo
+            if (frameCount % 40 === 0) {
+                const lane = Math.floor(Math.random() * LANE_COUNT);
+                notes.push(new Note(lane));
+            }
+        }
+
+        function checkJudgment(lane) {
+            const hitNote = notes.find(n => n.lane === lane && n.active && n.y > JUDGMENT_LINE_Y - 60 && n.y < JUDGMENT_LINE_Y + 40);
+            
+            if (hitNote) {
+                const diff = Math.abs(hitNote.y - JUDGMENT_LINE_Y);
+                hitNote.active = false;
+
+                if (diff < 15) {
+                    score += 100;
+                    combo++;
+                    showJudgment('PERFECT', '#ffeb3b');
+                } else if (diff < 35) {
+                    score += 50;
+                    combo++;
+                    showJudgment('GREAT', '#4caf50');
+                } else {
+                    score += 20;
+                    combo++;
+                    showJudgment('GOOD', '#2196f3');
+                }
+                updateUI();
+            }
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+            // Draw Lanes
+            ctx.strokeStyle = '#333';
+            ctx.shadowBlur = 0;
+            for (let i = 0; i <= LANE_COUNT; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * LANE_WIDTH, 0);
+                ctx.lineTo(i * LANE_WIDTH, CANVAS_HEIGHT);
+                ctx.stroke();
+            }
+
+            // Draw Judgment Line
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, JUDGMENT_LINE_Y);
+            ctx.lineTo(CANVAS_WIDTH, JUDGMENT_LINE_Y);
+            ctx.stroke();
+            ctx.lineWidth = 1;
+
+            // Draw Lane effects when keys pressed
+            Object.keys(keys).forEach(key => {
+                if (keys[key].pressed) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+                    ctx.fillRect(keys[key].lane * LANE_WIDTH, 0, LANE_WIDTH, CANVAS_HEIGHT);
+                }
+            });
+
+            // Update and Draw Notes
+            notes.forEach((note, index) => {
+                note.update();
+                note.draw();
+            });
+
+            // Remove inactive notes
+            notes = notes.filter(n => n.active || n.y <= CANVAS_HEIGHT);
+        }
+
+        function gameLoop() {
+            if (!gameActive) return;
+            frameCount++;
+            spawnNote();
+            drawScene();
+            animationId = requestAnimationFrame(gameLoop);
+        }
+
+        // Input Handlers
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys[key] && !keys[key].pressed) {
+                keys[key].pressed = true;
+                document.getElementById(`key-${key.toUpperCase()}`).style.backgroundColor = '#444';
+                checkJudgment(keys[key].lane);
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            if (keys[key]) {
+                keys[key].pressed = false;
+                document.getElementById(`key-${key.toUpperCase()}`).style.backgroundColor = 'transparent';
+            }
+        });
+
+        startBtn.addEventListener('click', () => {
+            if (gameActive) {
+                cancelAnimationFrame(animationId);
+                gameActive = false;
+                startBtn.innerText = 'START GAME';
+            } else {
+                score = 0;
+                combo = 0;
+                notes = [];
+                gameActive = true;
+                updateUI();
+                showJudgment('START!', '#fff');
+                startBtn.innerText = 'STOP GAME';
+                gameLoop();
+            }
+        });
+
+        // Initial Draw
+        drawScene();
+    </script>
+</body>
+</html>
